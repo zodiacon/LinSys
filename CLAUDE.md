@@ -48,7 +48,14 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
   interface's receive and send rates (`/proc/net/dev`): the Performance tab's data. `UpdateFrom` takes the files' text,
   the time and the disk list, for tests; a counter that went back (a reset device) gives no rate rather than a huge one.
 - `Disks::List`: the disks are `/sys/block`'s devices (partitions aren't there) but loop, ram and `dm-` ones and those of
-  size 0, with `device/model`. `SystemStats` lists them every 10 updates.
+  size 0, with `device/model` and their mount points: a mount's (`/proc/self/mountinfo`, whole file systems only:
+  root "/") device leads to its disk through `/sys/dev/block/MAJ:MIN`, whose link ends in `block/<disk>[/<partition>]`
+  (`DiskOfDeviceLink`). `SystemStats` lists them every 10 updates.
+- `ProcessDetails`: a process's open files (`fd` links and `fdinfo`), memory maps (`smaps`, or `maps` without the
+  sizes), environment and working directory, read on request, by key: the start time is checked after reading, so
+  a reused id gives ESRCH, not another process's data. Errors are errno values (EACCES for another user's process
+  without root). `fdinfo`'s flags are the kernel's: its `O_LARGEFILE` (0100000) is 0 in 64-bit headers.
+  `SystemInfo::GetCpuModel`: `/proc/cpuinfo`'s model name (else Hardware, for ARM boards).
 - `Users::GetUserName`: `getpwuid_r`, cached.
 - `Process`: signals (Terminate, Kill, Suspend, Resume) by `ProcessOrThreadKey`, never a bare pid: the process is
   opened as a pidfd and its start time checked before the signal, so a reused id is left alone (ESRCH). Errors are

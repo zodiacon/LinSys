@@ -41,7 +41,7 @@ TEST(SystemStats_Cpu) {
 
 TEST(SystemStats_Disks) {
 	SystemStats stats;
-	std::vector<DiskInfo> disks{ { "sda", "Virtual Disk", 1 << 30 }, { "sdb", "", 1 << 20 } };
+	std::vector<DiskInfo> disks{ { "sda", "Virtual Disk", 1 << 30, {} }, { "sdb", "", 1 << 20, {} } };
 	// sda1 (a partition) and loop0 aren't in the list: left out
 	auto first = DiskLine("sda", 1000, 2000, 100) + DiskLine("sda1", 900, 1900, 90) + DiskLine("loop0", 5, 5, 5) + DiskLine("sdb", 0, 0, 0);
 	CHECK(stats.UpdateFrom({ Cpu, Memory, first, "" }, Second, disks));

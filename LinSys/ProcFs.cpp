@@ -200,6 +200,163 @@ namespace LinSys {
 		return result;
 	}
 
+	std::string ProcFs::ParseCpuModel(std::string_view cpuinfo) {
+		std::string_view fallback;
+		while (!cpuinfo.empty()) {
+			auto line = NextLine(cpuinfo);
+			auto colon = line.find(':');
+			if (colon == std::string_view::npos)
+				continue;
+			auto key = line.substr(0, colon);
+			while (!key.empty() && (key.back() == ' ' || key.back() == '\t'))
+				key.remove_suffix(1);
+			auto value = line.substr(colon + 1);
+			value.remove_prefix(std::min(value.find_first_not_of(" \t"), value.size()));
+			if (key == "model name")
+				return std::string(value);
+			if ((key == "Hardware" || key == "cpu model") && fallback.empty())
+				fallback = value;
+		}
+		return std::string(fallback);
+	}
+
+	namespace {
+		// mountinfo writes a space, tab, newline and backslash as \040, \011, \012 and \134
+		std::string Unescape(std::string_view text) {
+			std::string result;
+			result.reserve(text.size());
+			for (size_t i = 0; i < text.size(); i++) {
+				if (text[i] == '\\' && i + 3 < text.size()) {
+					auto digits = text.substr(i + 1, 3);
+					if (std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '7'; })) {
+						result += static_cast<char>((digits[0] - '0') * 64 + (digits[1] - '0') * 8 + (digits[2] - '0'));
+						i += 3;
+						continue;
+					}
+				}
+				result += text[i];
+			}
+			return result;
+		}
+
+		bool ParseHex(std::string_view text, uint64_t& value) {
+			auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), value, 16);
+			return ec == std::errc() && ptr == text.data() + text.size();
+		}
+	}
+
+	std::vector<MountEntry> ProcFs::ParseMountInfo(std::string_view text) {
+		std::vector<MountEntry> mounts;
+		while (!text.empty()) {
+			auto line = NextLine(text);
+			NextField(line);	// mount id
+			NextField(line);	// parent id
+			auto device = NextField(line);
+			auto root = NextField(line);
+			auto mountPoint = NextField(line);
+			auto colon = device.find(':');
+			MountEntry mount;
+			if (mountPoint.empty() || colon == std::string_view::npos || !ToNumber(device.substr(0, colon), mount.Major)
+				|| !ToNumber(device.substr(colon + 1), mount.Minor))
+				continue;
+			// the options, then optional fields up to a lone "-"
+			for (auto field = NextField(line); !field.empty() && field != "-"; field = NextField(line)) {
+			}
+			mount.Root = Unescape(root);
+			mount.MountPoint = Unescape(mountPoint);
+			mount.FileSystem = std::string(NextField(line));
+			mount.Source = Unescape(NextField(line));
+			mounts.push_back(std::move(mount));
+		}
+		return mounts;
+	}
+
+	std::vector<MemoryMap> ProcFs::ParseMaps(std::string_view text) {
+		std::vector<MemoryMap> maps;
+		while (!text.empty()) {
+			auto line = NextLine(text);
+			auto rest = line;
+			auto first = NextField(rest);
+			auto dash = first.find('-');
+			MemoryMap map;
+			if (dash != std::string_view::npos && ParseHex(first.substr(0, dash), map.Start) && ParseHex(first.substr(dash + 1), map.End)) {
+				// "start-end perms offset dev inode path"
+				map.Permissions = std::string(NextField(rest));
+				if (!ParseHex(NextField(rest), map.Offset))
+					continue;
+				map.Device = std::string(NextField(rest));
+				if (!ToNumber(NextField(rest), map.Inode))
+					continue;
+				rest.remove_prefix(std::min(rest.find_first_not_of(" \t"), rest.size()));
+				map.Path = std::string(rest);
+				maps.push_back(std::move(map));
+				continue;
+			}
+			// smaps: "Rss:   120 kB" belongs to the region before it
+			if (maps.empty() || first.empty() || first.back() != ':')
+				continue;
+			uint64_t kb;
+			if (!ToNumber(NextField(rest), kb))
+				continue;
+			auto& last = maps.back();
+			if (first == "Rss:")
+				last.Resident = kb * 1024;
+			else if (first == "Pss:")
+				last.Proportional = kb * 1024;
+			else if (first == "Swap:")
+				last.Swap = kb * 1024;
+		}
+		return maps;
+	}
+
+	FdInfo ProcFs::ParseFdInfo(std::string_view text) {
+		FdInfo info;
+		while (!text.empty()) {
+			auto line = NextLine(text);
+			auto key = NextField(line);
+			auto value = NextField(line);
+			if (key == "pos:")
+				ToNumber(value, info.Position);
+			else if (key == "flags:") {
+				auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), info.Flags, 8);
+				if (ec != std::errc())
+					info.Flags = 0;
+			}
+		}
+		return info;
+	}
+
+	FileKind ProcFs::ClassifyFdTarget(std::string_view target) {
+		if (target.starts_with("socket:["))
+			return FileKind::Socket;
+		if (target.starts_with("pipe:["))
+			return FileKind::Pipe;
+		if (target.starts_with("anon_inode:"))
+			return FileKind::AnonymousInode;
+		if (target.starts_with("/dev/"))
+			return FileKind::Device;
+		if (target.starts_with('/'))
+			return FileKind::File;
+		return FileKind::Other;
+	}
+
+	std::vector<std::pair<std::string, std::string>> ProcFs::ParseEnviron(std::string_view text) {
+		std::vector<std::pair<std::string, std::string>> variables;
+		while (!text.empty()) {
+			auto end = text.find('\0');
+			auto entry = text.substr(0, end);
+			text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+			if (entry.empty())
+				continue;
+			auto equals = entry.find('=');
+			if (equals == std::string_view::npos)
+				variables.emplace_back(std::string(entry), std::string());
+			else
+				variables.emplace_back(std::string(entry.substr(0, equals)), std::string(entry.substr(equals + 1)));
+		}
+		return variables;
+	}
+
 	std::string ProcFs::ImageNameFromCommandLine(std::string_view cmdline, std::string_view comm) {
 		if (comm.size() < MaxCommLength)
 			return std::string(comm);

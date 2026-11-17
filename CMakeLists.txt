@@ -18,6 +18,7 @@ add_library(LinSys STATIC
 	LinSys/ProcessInfo.cpp
 	LinSys/SystemStats.cpp
 	LinSys/Disks.cpp
+	LinSys/ProcessDetails.cpp
 	LinSys/Users.cpp
 )
 # consumers include it with the folder prefix: <LinSys/ProcessManager.h>
@@ -31,6 +32,7 @@ if(PROJECT_IS_TOP_LEVEL)
 		Tests/Main.cpp
 		Tests/ProcFsTests.cpp
 		Tests/ProcessManagerTests.cpp
+		Tests/ProcessDetailsTests.cpp
 		Tests/ProcessTests.cpp
 		Tests/SystemStatsTests.cpp
 	)
