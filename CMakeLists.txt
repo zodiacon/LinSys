@@ -18,6 +18,7 @@ add_library(LinSys STATIC
 	LinSys/ProcessInfo.cpp
 	LinSys/Services.cpp
 	LinSys/SystemStats.cpp
+	LinSys/Connections.cpp
 	LinSys/Disks.cpp
 	LinSys/ProcessDetails.cpp
 	LinSys/Users.cpp
@@ -35,6 +36,7 @@ target_link_libraries(LinSys PRIVATE PkgConfig::SYSTEMD)
 if(PROJECT_IS_TOP_LEVEL)
 	add_executable(Tests
 		Tests/Main.cpp
+		Tests/ConnectionsTests.cpp
 		Tests/ProcFsTests.cpp
 		Tests/ProcessManagerTests.cpp
 		Tests/ProcessDetailsTests.cpp

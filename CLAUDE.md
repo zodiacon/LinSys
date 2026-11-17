@@ -67,6 +67,12 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
   action). `Start`, `Stop`, `Restart` queue a job; without root polkit decides (interactive authorization allowed:
   an agent may ask), else EACCES. Results are `BusResult`: an errno value and systemd's message. `Merge` is the
   pure part, tested; `linsyscon --services` lists them with the times.
+- `Connections` (`Connections.h`): the sockets of `/proc/net/tcp`, `tcp6`, `udp` and `udp6` (this process's network
+  namespace). Addresses are native-order 32-bit words in hex, so each word's bytes are copied as they are (the tests
+  assume a little-endian machine, as the kernel's text does there). `SocketOwners` finds each socket's process from
+  the `socket:[inode]` links in `/proc/[pid]/fd`: costly, so read again only when a socket appears that hasn't been
+  looked for; one not found (another user's, without root) isn't looked for again while it lasts. A shared socket
+  gets the first process found.
 
 ## Conventions
 
