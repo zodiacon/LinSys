@@ -12,6 +12,7 @@ endif()
 
 # the library: what the Linux app will consume, as WinSysLive does WinSys
 add_library(LinSys STATIC
+	LinSys/Process.cpp
 	LinSys/ProcFs.cpp
 	LinSys/ProcessInfo.cpp
 	LinSys/SystemStats.cpp
@@ -25,6 +26,7 @@ add_executable(Tests
 	Tests/Main.cpp
 	Tests/ProcFsTests.cpp
 	Tests/ProcessManagerTests.cpp
+	Tests/ProcessTests.cpp
 )
 target_link_libraries(Tests PRIVATE LinSys)
 target_compile_options(Tests PRIVATE -Wall -Wextra)

@@ -36,7 +36,7 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
   - The parent id is updated on every update (Linux reparents orphans). The tree takes a process as a root when its
     parent started after it (the id was reused); start times are in ticks, so a child can share its parent's.
   - The constructor takes the folder to read (`/proc`) and the processor count, and `UpdateAt` the time: the tests
-    build a fake `/proc` in a temporary folder (`FakeProc` in `ProcessManagerTests.cpp`) and check new, terminated,
+    build a fake `/proc` in a temporary folder (`Tests/FakeProc.h`, which LinSysLive's tests include too) and check new, terminated,
     reused ids, CPU and threads deterministically.
   - Strings are UTF-8 `std::string`. Times are nanoseconds, sizes bytes.
 - **Names.** `exe` can't be read for another user's process without root (or `CAP_SYS_PTRACE`), and `comm` is cut to
@@ -46,6 +46,9 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
 - `SystemStats`: overall and per-processor CPU (`/proc/stat`) and memory (`/proc/meminfo`) between two updates: the
   Performance tab's data.
 - `Users::GetUserName`: `getpwuid_r`, cached.
+- `Process`: signals (Terminate, Kill, Suspend, Resume) by `ProcessOrThreadKey`, never a bare pid: the process is
+  opened as a pidfd and its start time checked before the signal, so a reused id is left alone (ESRCH). Errors are
+  errno values. `pidfd_open`/`pidfd_send_signal` are called by `syscall`: glibc 2.43's `<sys/pidfd.h>` lacks C linkage.
 
 ## Conventions
 
