@@ -60,6 +60,13 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
 - `Process`: signals (Terminate, Kill, Suspend, Resume) by `ProcessOrThreadKey`, never a bare pid: the process is
   opened as a pidfd and its start time checked before the signal, so a reused id is left alone (ESRCH). Errors are
   errno values. `pidfd_open`/`pidfd_send_signal` are called by `syscall`: glibc 2.43's `<sys/pidfd.h>` lacks C linkage.
+- `ServiceManager` (`Services.h`): systemd's services over D-Bus with sd-bus (libsystemd; `libsystemd-dev` to build,
+  found through pkg-config), one connection, one thread. `List`: the loaded units (`ListUnitsByPatterns`, *.service),
+  the installed ones not loaded (`ListUnitFilesByPatterns`; templates left out) and the running ones' `MainPID`; 14 ms
+  here, but the unit files take 200 ms (systemd reads its folders), so they're read only when asked (and after an
+  action). `Start`, `Stop`, `Restart` queue a job; without root polkit decides (interactive authorization allowed:
+  an agent may ask), else EACCES. Results are `BusResult`: an errno value and systemd's message. `Merge` is the
+  pure part, tested; `linsyscon --services` lists them with the times.
 
 ## Conventions
 

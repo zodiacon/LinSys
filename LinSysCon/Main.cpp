@@ -1,9 +1,11 @@
 // LinSysCon: LinSys at work, as WinSysCon is WinSys's. Samples for a second, then prints the processes by CPU
-// (or, with --tree, as a tree) and the system's CPU and memory.
+// (or, with --tree, as a tree) and the system's CPU and memory; or, with --services, systemd's services and how long
+// listing them took.
 //
-// linsyscon [--tree] [-n count]
+// linsyscon [--tree] [-n count] | --services
 
 #include <LinSys/ProcessManager.h>
+#include <LinSys/Services.h>
 #include <LinSys/SystemStats.h>
 
 #include <algorithm>
@@ -29,10 +31,36 @@ namespace {
 	}
 }
 
+namespace {
+	int ListServices() {
+		using Clock = std::chrono::steady_clock;
+		auto ms = [](Clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); };
+		ServiceManager manager;
+		std::vector<ServiceInfo> services;
+		auto start = Clock::now();
+		auto result = manager.List(services, true);
+		auto first = Clock::now() - start;
+		start = Clock::now();
+		result = manager.List(services, false);
+		auto second = Clock::now() - start;
+		if (result.Error) {
+			fprintf(stderr, "%s (%d)\n", result.Message.c_str(), result.Error);
+			return 1;
+		}
+		for (auto& s : services)
+			printf("%-48s %-10s %-10s %-9s %7u  %s\n", s.Name.c_str(), s.ActiveState.c_str(), s.SubState.c_str(),
+				s.UnitFileState.c_str(), s.MainPid, s.Description.c_str());
+		printf("\n%zu services; listed in %.1f ms with the unit files, %.1f ms without\n", services.size(), ms(first), ms(second));
+		return 0;
+	}
+}
+
 int main(int argc, char** argv) {
 	bool tree = false;
 	size_t count = 25;
 	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--services") == 0)
+			return ListServices();
 		if (strcmp(argv[i], "--tree") == 0)
 			tree = true;
 		else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc)

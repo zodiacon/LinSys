@@ -16,6 +16,7 @@ add_library(LinSys STATIC
 	LinSys/Process.cpp
 	LinSys/ProcFs.cpp
 	LinSys/ProcessInfo.cpp
+	LinSys/Services.cpp
 	LinSys/SystemStats.cpp
 	LinSys/Disks.cpp
 	LinSys/ProcessDetails.cpp
@@ -25,6 +26,10 @@ add_library(LinSys STATIC
 target_include_directories(LinSys PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(LinSys PUBLIC cxx_std_23)
 target_compile_options(LinSys PRIVATE -Wall -Wextra -Wpedantic)
+# systemd's services over D-Bus: sd-bus, from libsystemd (libsystemd-dev)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+target_link_libraries(LinSys PRIVATE PkgConfig::SYSTEMD)
 
 # the tests and the console tool only when LinSys is built by itself, not as a submodule
 if(PROJECT_IS_TOP_LEVEL)
@@ -34,6 +39,7 @@ if(PROJECT_IS_TOP_LEVEL)
 		Tests/ProcessManagerTests.cpp
 		Tests/ProcessDetailsTests.cpp
 		Tests/ProcessTests.cpp
+		Tests/ServicesTests.cpp
 		Tests/SystemStatsTests.cpp
 	)
 	target_link_libraries(Tests PRIVATE LinSys)
