@@ -43,8 +43,12 @@ wsl -e bash -c "cd /mnt/c/Dev/linsys && ./build/linsyscon --tree"
   15 characters, so the name then comes from `cmdline` (world-readable) when `comm` was cut: argv[0], or argv[1] for a
   script run by its interpreter. Kernel threads are told by `PF_KTHREAD` in stat's flags, not by their parent: in WSL
   pid 2 is `init-systemd`.
-- `SystemStats`: overall and per-processor CPU (`/proc/stat`) and memory (`/proc/meminfo`) between two updates: the
-  Performance tab's data.
+- `SystemStats`: between two updates, overall and per-processor CPU (`/proc/stat`), memory (`/proc/meminfo`), each
+  disk's read and write rates and active time (`/proc/diskstats`; sectors are always 512 bytes there) and each
+  interface's receive and send rates (`/proc/net/dev`): the Performance tab's data. `UpdateFrom` takes the files' text,
+  the time and the disk list, for tests; a counter that went back (a reset device) gives no rate rather than a huge one.
+- `Disks::List`: the disks are `/sys/block`'s devices (partitions aren't there) but loop, ram and `dm-` ones and those of
+  size 0, with `device/model`. `SystemStats` lists them every 10 updates.
 - `Users::GetUserName`: `getpwuid_r`, cached.
 - `Process`: signals (Terminate, Kill, Suspend, Resume) by `ProcessOrThreadKey`, never a bare pid: the process is
   opened as a pidfd and its start time checked before the signal, so a reused id is left alone (ESRCH). Errors are

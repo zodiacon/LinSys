@@ -1,6 +1,6 @@
 #include "TestFramework.h"
 #include <LinSys/ProcFs.h>
-#include <LinSys/SystemStats.h>
+
 
 using namespace LinSys;
 
@@ -117,27 +117,44 @@ TEST(ProcFs_ImageNameFromCommandLine) {
 	CHECK_EQ(ProcFs::ImageNameFromCommandLine(""sv, "a-long-name-cut"), std::string("a-long-name-cut"));
 }
 
-TEST(SystemStats_Cpu) {
-	SystemStats stats;
-	const char* memory = "MemTotal: 1000 kB\nMemAvailable: 400 kB\n";
-	CHECK(stats.UpdateFrom("cpu  100 0 100 800 0 0 0 0\ncpu0 50 0 50 400 0 0 0 0\ncpu1 50 0 50 400 0 0 0 0\n", memory));
-	CHECK_EQ(stats.GetCpu(), 0);	// one sample
-	// 400 ticks more: cpu0 busy for 150 of 200, cpu1 for 50 of 200
-	CHECK(stats.UpdateFrom("cpu  250 0 150 1000 0 0 0 0\ncpu0 150 0 100 450 0 0 0 0\ncpu1 100 0 50 550 0 0 0 0\n", memory));
-	CHECK_EQ(stats.GetCpu(), 500000);		// 200 of 400: 50%
-	CHECK_EQ(stats.GetKernelCpu(), 125000);	// 50 of 400
-	CHECK_EQ(stats.GetProcessorCpu().size(), 2u);
-	if (stats.GetProcessorCpu().size() == 2) {
-		CHECK_EQ(stats.GetProcessorCpu()[0], 750000);
-		CHECK_EQ(stats.GetProcessorCpu()[1], 250000);
-	}
-	CHECK_EQ(stats.GetMemory().Available, 400ull * 1024);
+// lines as WSL's kernel (6.18) writes them: 17 fields after the name (older kernels have 11 or 15)
+TEST(ProcFs_ParseDiskStats) {
+	auto disks = ProcFs::ParseDiskStats(
+		"   1       0 ram0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+		"   8       0 sda 2731 0 365552 1187 0 0 0 0 0 1580 1187 0 0 0 0 0 0\n"
+		"   8      48 sdd 52121 18837 3964454 21533 98213 101917 6352032 236718 0 104720 268102 0 0 0 0 1530 9850\n"
+		" 259       1 nvme0n1p1 100 0 200 5 10 0 80 1 0 7 6\n"
+		"   8      64 bad 1 2 x\n");
+	CHECK_EQ(disks.size(), 4u);
+	if (disks.size() != 4)
+		return;
+	CHECK_EQ(disks[1].Name, std::string("sda"));
+	CHECK_EQ(disks[1].Reads, 2731ull);
+	CHECK_EQ(disks[1].SectorsRead, 365552ull);
+	CHECK_EQ(disks[1].IoMilliseconds, 1580ull);
+	CHECK_EQ(disks[2].Writes, 98213ull);
+	CHECK_EQ(disks[2].SectorsWritten, 6352032ull);
+	CHECK_EQ(disks[2].IoMilliseconds, 104720ull);
+	CHECK_EQ(disks[3].Name, std::string("nvme0n1p1"));	// 11 fields
+	CHECK_EQ(disks[3].IoMilliseconds, 7ull);
 }
 
-TEST(SystemStats_Live) {
-	SystemStats stats;
-	CHECK(stats.Update());
-	CHECK(stats.GetMemory().Total > 0);
-	CHECK(stats.GetMemory().Available <= stats.GetMemory().Total);
-	CHECK_EQ(stats.GetProcessorCpu().size(), static_cast<size_t>(ProcFs::ProcessorCount()));
+TEST(ProcFs_ParseNetDev) {
+	auto interfaces = ProcFs::ParseNetDev(
+		"Inter-|   Receive                                                |  Transmit\n"
+		" face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n"
+		"    lo:   13855     118    0    0    0     0          0         0    13855     118    0    0    0     0       0          0\n"
+		"  eth0: 48211098    3874    0    0    0     0          0       408   247767    2735    0    0    0     0       0          0\n"
+		"wlan0:1000 10 0 0 0 0 0 0 2000 20 0 0 0 0 0 0\n");
+	CHECK_EQ(interfaces.size(), 3u);
+	if (interfaces.size() != 3)
+		return;
+	CHECK_EQ(interfaces[0].Name, std::string("lo"));
+	CHECK_EQ(interfaces[1].Name, std::string("eth0"));
+	CHECK_EQ(interfaces[1].ReceivedBytes, 48211098ull);
+	CHECK_EQ(interfaces[1].ReceivedPackets, 3874ull);
+	CHECK_EQ(interfaces[1].SentBytes, 247767ull);
+	CHECK_EQ(interfaces[1].SentPackets, 2735ull);
+	CHECK_EQ(interfaces[2].Name, std::string("wlan0"));	// no space after the colon
+	CHECK_EQ(interfaces[2].SentBytes, 2000ull);
 }

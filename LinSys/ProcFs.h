@@ -43,8 +43,22 @@ namespace LinSys {
 		uint64_t Total{}, Free{}, Available{}, Buffers{}, Cached{}, SwapTotal{}, SwapFree{};
 	};
 
+	// a line of /proc/diskstats: the device's counters since boot
+	struct DiskCounters {
+		std::string Name;
+		uint64_t Reads{}, SectorsRead{}, Writes{}, SectorsWritten{};	// sectors of 512 bytes, whatever the device's
+		uint64_t IoMilliseconds{};	// time with I/O in flight (the active time)
+	};
+
+	// a line of /proc/net/dev: the interface's counters since it came up
+	struct NetworkCounters {
+		std::string Name;
+		uint64_t ReceivedBytes{}, ReceivedPackets{}, SentBytes{}, SentPackets{};
+	};
+
 	struct ProcFs final {
 		static constexpr uint32_t KernelThreadFlag = 0x00200000;	// PF_KTHREAD
+		static constexpr uint64_t SectorSize = 512;					// diskstats' and /sys/block's unit
 		static constexpr size_t MaxCommLength = 15;					// TASK_COMM_LEN, less the NUL
 
 		// the stat line; the name is between the first '(' and the last ')'
@@ -54,6 +68,10 @@ namespace LinSys {
 		// /proc/stat's cpu lines: the total ("cpu") first, then each processor ("cpuN") in order
 		[[nodiscard]] static std::vector<CpuTimes> ParseCpuTimes(std::string_view text);
 		[[nodiscard]] static std::optional<MemoryInfo> ParseMemInfo(std::string_view text);
+		// every device's line (partitions, loop and ram devices too: Disks::List says which are disks)
+		[[nodiscard]] static std::vector<DiskCounters> ParseDiskStats(std::string_view text);
+		// every interface after the two header lines (lo too)
+		[[nodiscard]] static std::vector<NetworkCounters> ParseNetDev(std::string_view text);
 		// cmdline's arguments, separated by NULs, joined by spaces (empty for a kernel thread)
 		[[nodiscard]] static std::string ParseCommandLine(std::string_view text);
 		// The name for a process whose exe can't be read (another user's, without root): comm, unless it was cut to

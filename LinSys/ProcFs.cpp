@@ -1,5 +1,6 @@
 #include "ProcFs.h"
 
+#include <algorithm>
 #include <charconv>
 #include <fcntl.h>
 #include <unistd.h>
@@ -141,6 +142,52 @@ namespace LinSys {
 		if (!total)
 			return std::nullopt;
 		return info;
+	}
+
+	std::vector<DiskCounters> ProcFs::ParseDiskStats(std::string_view text) {
+		std::vector<DiskCounters> disks;
+		while (!text.empty()) {
+			auto line = NextLine(text);
+			NextField(line);	// major
+			NextField(line);	// minor
+			auto name = NextField(line);
+			if (name.empty())
+				continue;
+			// the fields as Documentation/admin-guide/iostats.rst numbers them, from 1
+			uint64_t fields[10]{};
+			bool ok = true;
+			for (auto& field : fields)
+				ok = ok && ToNumber(NextField(line), field);
+			if (!ok)
+				continue;
+			disks.push_back({ std::string(name), fields[0], fields[2], fields[4], fields[6], fields[9] });
+		}
+		return disks;
+	}
+
+	std::vector<NetworkCounters> ProcFs::ParseNetDev(std::string_view text) {
+		std::vector<NetworkCounters> interfaces;
+		while (!text.empty()) {
+			auto line = NextLine(text);
+			// "  eth0: 1234 ..."; old kernels put no space after the colon
+			auto colon = line.find(':');
+			if (colon == std::string_view::npos)
+				continue;
+			auto name = line.substr(0, colon);
+			name.remove_prefix(std::min(name.find_first_not_of(' '), name.size()));
+			if (name.empty() || name.find('|') != std::string_view::npos)
+				continue;	// a header
+			line.remove_prefix(colon + 1);
+			// receive: bytes packets errs drop fifo frame compressed multicast; then transmit: bytes packets...
+			uint64_t fields[10]{};
+			bool ok = true;
+			for (auto& field : fields)
+				ok = ok && ToNumber(NextField(line), field);
+			if (!ok)
+				continue;
+			interfaces.push_back({ std::string(name), fields[0], fields[1], fields[8], fields[9] });
+		}
+		return interfaces;
 	}
 
 	std::string ProcFs::ParseCommandLine(std::string_view text) {
