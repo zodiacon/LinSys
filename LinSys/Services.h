@@ -6,6 +6,7 @@
 #include <vector>
 
 struct sd_bus;
+struct sd_bus_error;
 
 namespace LinSys {
 	// a systemd service: loaded (systemd has it in memory: running, failed, or stopped but referenced) or only
@@ -42,7 +43,8 @@ namespace LinSys {
 		ServiceManager(const ServiceManager&) = delete;
 		ServiceManager& operator=(const ServiceManager&) = delete;
 
-		// connecting failed: why (an errno value; the calls then return it)
+		// connecting failed: why (an errno value; the calls then return it). A connection closed later (the bus daemon
+		// restarted) is opened again by the next call
 		[[nodiscard]] int GetConnectError() const { return m_ConnectError; }
 
 		// the services, by name: the loaded ones and the installed ones not loaded (templates, "x@.service",
@@ -62,8 +64,13 @@ namespace LinSys {
 		[[nodiscard]] static std::string UnitNameOfPath(const std::string& path);
 
 	private:
+		// opens the bus and waits for the handshake; false (m_ConnectError set, m_Bus null) if that failed
+		bool Connect();
+		// a call got ENOTCONN (nothing sent): a new connection, error cleared for the call made again
+		bool Reconnect(sd_bus_error& error);
 		BusResult CallJob(const char* method, const std::string& name);
 
+		Bus m_BusType;
 		sd_bus* m_Bus{ nullptr };
 		int m_ConnectError{};
 		std::unordered_map<std::string, std::string> m_UnitFiles;	// name to state

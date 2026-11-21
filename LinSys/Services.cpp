@@ -33,15 +33,29 @@ namespace LinSys {
 		}
 	}
 
-	ServiceManager::ServiceManager(Bus bus) {
-		auto r = bus == Bus::System ? sd_bus_open_system(&m_Bus) : sd_bus_open_user(&m_Bus);
+	ServiceManager::ServiceManager(Bus bus) : m_BusType(bus) {
+		Connect();
+	}
+
+	bool ServiceManager::Connect() {
+		m_Bus = sd_bus_flush_close_unref(m_Bus);
+		auto r = m_BusType == Bus::System ? sd_bus_open_system(&m_Bus) : sd_bus_open_user(&m_Bus);
+		if (r >= 0) {
+			// let polkit ask (through an agent, if there is one) instead of refusing outright
+			sd_bus_set_allow_interactive_authorization(m_Bus, 1);
+			// sd-bus authenticates lazily, on the first call; the bus daemon drops a connection that hasn't
+			// authenticated within its timeout (under a minute), so the first List, when the view is shown, would
+			// get ENOTCONN. The unique name waits for the handshake (Hello) to finish
+			const char* unique;
+			r = sd_bus_get_unique_name(m_Bus, &unique);
+		}
 		if (r < 0) {
 			m_ConnectError = -r;
-			m_Bus = nullptr;
-			return;
+			m_Bus = sd_bus_flush_close_unref(m_Bus);
+			return false;
 		}
-		// let polkit ask (through an agent, if there is one) instead of refusing outright
-		sd_bus_set_allow_interactive_authorization(m_Bus, 1);
+		m_ConnectError = 0;
+		return true;
 	}
 
 	ServiceManager::~ServiceManager() {
@@ -86,8 +100,13 @@ namespace LinSys {
 			BusError error;
 			BusMessage reply;
 			// all states (an empty list), services only
-			auto r = sd_bus_call_method(m_Bus, Destination, ManagerPath, ManagerInterface, "ListUnitsByPatterns", &error.Value,
-				&reply.Value, "asas", 0, 1, "*.service");
+			auto list = [&] {
+				return sd_bus_call_method(m_Bus, Destination, ManagerPath, ManagerInterface, "ListUnitsByPatterns", &error.Value,
+					&reply.Value, "asas", 0, 1, "*.service");
+			};
+			auto r = list();
+			if (r == -ENOTCONN && Reconnect(error.Value))
+				r = list();
 			if (r < 0)
 				return ResultOf(r, error);
 			r = sd_bus_message_enter_container(reply.Value, 'a', "(ssssssouso)");
@@ -138,11 +157,23 @@ namespace LinSys {
 			return { m_ConnectError, "Not connected to the system bus" };
 		BusError error;
 		BusMessage reply;
-		auto r = sd_bus_call_method(m_Bus, Destination, ManagerPath, ManagerInterface, method, &error.Value, &reply.Value,
-			"ss", name.c_str(), "replace");
+		auto call = [&] {
+			return sd_bus_call_method(m_Bus, Destination, ManagerPath, ManagerInterface, method, &error.Value, &reply.Value,
+				"ss", name.c_str(), "replace");
+		};
+		auto r = call();
+		if (r == -ENOTCONN && Reconnect(error.Value))
+			r = call();
 		// what's installed may have changed (a unit file loaded by starting it)
 		m_HaveUnitFiles = false;
 		return ResultOf(r, error);
+	}
+
+	bool ServiceManager::Reconnect(sd_bus_error& error) {
+		// ENOTCONN: the connection was closed (the bus daemon restarted) before the call was sent, so it's safe to send
+		// again on a new one
+		sd_bus_error_free(&error);
+		return Connect();
 	}
 
 	BusResult ServiceManager::Start(const std::string& name) {
